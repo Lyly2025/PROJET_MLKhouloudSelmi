@@ -1,0 +1,52 @@
+
+version: 1.0
+
+pipeline:
+  name: projet_ml_pipeline
+  description: Pipeline ML entraînement et déploiement
+
+  stages:
+    - name: Source
+      type: GitHub
+      description: Récupération du code depuis GitHub
+      configuration:
+        repository: MEP2025/PROJET_MLKhouloud
+        branch: main
+        oauth_token: <GitHub_Token>  # À stocker dans AWS Secrets Manager
+
+    - name: Build
+      type: CodeBuild
+      description: Entraînement du modèle ML avec CodeBuild
+      configuration:
+        project_name: PROJET_MLKhouloud
+        image: aws/codebuild/standard:6.0
+        compute_type: BUILD_GENERAL1_SMALL
+        buildspec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: 3.9
+              commands:
+                - pip install --upgrade pip
+                - pip install -r requirements.txt
+            build:
+              commands:
+                - python train_model.py
+                - mkdir -p output
+                - cp best_model.pkl output/
+                - cp app.py output/
+                - cp -r artifacts output/
+          artifacts:
+            files:
+              - '**/*'
+            base-directory: output
+
+    - name: Deploy
+      type: SageMaker
+      description: Déploiement du modèle sur SageMaker
+      configuration:
+        model_name: projet-ml-model
+        image_uri: <ECR-Image-URI>  # URI de l'image Docker ECR
+        model_data_url: s3://<your-bucket>/output/best_model.pkl
+        execution_role_arn: arn:aws:iam::<account-id>:role/SageMakerExecutionRole

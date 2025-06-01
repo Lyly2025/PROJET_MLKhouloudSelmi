@@ -169,6 +169,22 @@ def output_fn(prediction, accept):
 # Initialisation
 model_loaded = load_artifacts()
 
+
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    try:
+        input_data = request.get_json()
+        input_df = input_fn(json.dumps(input_data), "application/json")
+        prediction = predict_fn(input_df, MODEL)
+        result = output_fn(prediction, "application/json")
+        return jsonify(json.loads(result))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 if __name__ == "__main__":
     # Test avec différents cas
     test_cases = [
