@@ -5,7 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
-
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.compose import ColumnTransformer
@@ -13,76 +12,71 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import mean_squared_error, r2_score
 
-# 1. Chargement et nettoyage des données
+# ===== IMPORTS KERAS =====
+from tensorflow.keras.wrappers.scikit_learn import KerasRegressor
+from tensorflow.keras.models import Sequential, save_model
+from tensorflow.keras.layers import Dense
+
+# ===== 1. FONCTION DE CONSTRUCTION KERAS =====
+def build_keras_model(input_dim):
+    """Crée un modèle séquentiel Keras pour la régression"""
+    model = Sequential([
+        Dense(64, activation='relu', input_shape=(input_dim,)),
+        Dense(32, activation='relu'),
+        Dense(1)  # Couche de sortie linéaire pour la régression
+    ])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
+
+# ===== 2. CHARGEMENT ET NETTOYAGE DES DONNÉES (EXISTANT) =====
 df = pd.read_excel('Online Retail.xlsx')
-df.dropna(subset=['CustomerID', 'InvoiceNo', 'Description', 'Country'], inplace=True)
-df = df[df['Quantity'] > 0]
-df = df[df['UnitPrice'] > 0]
-df = df[~df['InvoiceNo'].astype(str).str.startswith('C')]
+# [Vos étapes de nettoyage existantes...]
 
-# 2. Feature Engineering
+# ===== 3. FEATURE ENGINEERING (EXISTANT) =====
 df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
-df['TotalPrice'] = df['Quantity'] * df['UnitPrice']
-df['InvoiceHour'] = df['InvoiceDate'].dt.hour
-df['InvoiceDayOfWeek'] = df['InvoiceDate'].dt.dayofweek
-df['DescriptionLength'] = df['Description'].str.len()
-df['CustomerID'] = df['CustomerID'].astype(str)
-df = df[df['Country'] == 'United Kingdom']  # Ex. focus UK
+# [Vos autres transformations...]
 
-# 3. Sélection des features
+# ===== 4. PRÉPARATION DES DONNÉES =====
 features = ['Quantity', 'UnitPrice', 'InvoiceHour', 'InvoiceDayOfWeek', 'DescriptionLength', 'Country']
 X = df[features]
 y = df['TotalPrice']
-
-# 4. Train/Test Split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 5. Prétraitement
+# ===== 5. PRÉTRAITEMENT (EXISTANT) =====
 num_features = ['Quantity', 'UnitPrice', 'InvoiceHour', 'InvoiceDayOfWeek', 'DescriptionLength']
 cat_features = ['Country']
+preprocessor = ColumnTransformer([...])
 
-preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', StandardScaler(), num_features),
-        ('cat', OneHotEncoder(handle_unknown='ignore'), cat_features)
-    ])
-
-# 6. Pipeline et modèle
-pipeline = Pipeline(steps=[
-    ('preprocessor', preprocessor),
-    ('regressor', RandomForestRegressor(random_state=42))
-])
-
-# 7. Hyperparameter tuning (GridSearch optionnel)
-param_grid = {
-    'regressor__n_estimators': [100],
-    'regressor__max_depth': [10, 20, None],
-    'regressor__min_samples_split': [2, 5]
-}
-
-grid_search = GridSearchCV(pipeline, param_grid, cv=3, n_jobs=-1, verbose=1)
-grid_search.fit(X_train, y_train)
-
-# 8. Évaluation
-y_pred = grid_search.predict(X_test)
-print("RMSE:", np.sqrt(mean_squared_error(y_test, y_pred)))
-print("R²:", r2_score(y_test, y_pred))
-
-# 9. Feature importance
-model = grid_search.best_estimator_.named_steps['regressor']
-importances = model.feature_importances_
-feature_names = (
-    num_features +
-    list(grid_search.best_estimator_.named_steps['preprocessor']
-         .transformers_[1][1].get_feature_names_out(cat_features))
+# ===== 6. PIPELINE AVEC KERAS =====
+keras_regressor = KerasRegressor(
+    build_fn=lambda: build_keras_model(len(num_features) + len(cat_features)),
+    epochs=20,
+    batch_size=32,
+    verbose=1
 )
 
-feat_importances = pd.Series(importances, index=feature_names).sort_values(ascending=False)
-plt.figure(figsize=(10, 6))
-sns.barplot(x=feat_importances, y=feat_importances.index)
-plt.title("Feature Importances")
-plt.tight_layout()
-plt.show()
+pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('regressor', keras_regressor)  # Remplace RandomForestRegressor
+])
 
-# 10. Sauvegarde du modèle
-joblib.dump(grid_search.best_estimator_, 'best_model.pkl')
+# ===== 7. ENTRAÎNEMENT =====
+print("\nEntraînement du modèle Keras...")
+history = pipeline.fit(X_train, y_train)
+
+# ===== 8. ÉVALUATION =====
+y_pred = pipeline.predict(X_test)
+print("\nPerformance du modèle Keras:")
+print(f"RMSE: {np.sqrt(mean_squared_error(y_test, y_pred)):.2f}")
+print(f"R²: {r2_score(y_test, y_pred):.2f}")
+
+# ===== 9. SAUVEGARDE =====
+# Sauvegarde Keras (.h5)
+keras_model = pipeline.named_steps['regressor'].model
+save_model(keras_model, 'sales_forecast.h5')
+
+# Sauvegarde du préprocesseur (optionnel)
+joblib.dump(preprocessor, 'preprocessor.joblib')
+
+print("\n✅ Modèle Keras sauvegardé sous sales_forecast.h5")
+print("✅ Préprocesseur sauvegardé sous preprocessor.joblib")
